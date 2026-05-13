@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import pydeck as pdk
 import plotly.graph_objects as go
 import plotly.express as px
@@ -21,6 +20,11 @@ if "pickup_hour" not in st.session_state:
 if "is_playing" not in st.session_state:
     st.session_state["is_playing"] = False
 
+# Play 時間先更新，再畫 slider / map
+if st.session_state["is_playing"]:
+    time.sleep(0.6)
+    st.session_state["pickup_hour"] = (st.session_state["pickup_hour"] + 1) % 24
+
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -34,11 +38,9 @@ st.markdown("""
     color: #c8d6e8;
 }
 
-/* hide streamlit chrome */
 #MainMenu, footer, header { visibility: hidden; }
 [data-testid="stSidebar"] { display: none; }
 
-/* ── Header ── */
 .dash-header {
     padding: 32px 0 8px 0;
     border-bottom: 1px solid #141e30;
@@ -62,7 +64,6 @@ st.markdown("""
     line-height: 1.55;
 }
 
-/* ── KPI cards ── */
 .kpi-row {
     display: flex;
     gap: 14px;
@@ -77,7 +78,6 @@ st.markdown("""
     padding: 20px 22px;
     position: relative;
     overflow: hidden;
-    transition: border-color 0.2s;
 }
 
 .kpi::before {
@@ -113,7 +113,6 @@ st.markdown("""
     margin-top: 4px;
 }
 
-/* ── Section titles ── */
 .sec-title {
     font-family: 'Syne', sans-serif;
     font-size: 0.95rem;
@@ -124,36 +123,6 @@ st.markdown("""
     margin-bottom: 10px;
 }
 
-/* ── Playback controls ── */
-.play-bar {
-    background: #0a0f1a;
-    border: 1px solid #1a2a4a;
-    border-radius: 14px;
-    padding: 16px 22px;
-    margin-bottom: 18px;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
-
-.hour-badge {
-    font-family: 'DM Mono', monospace;
-    font-size: 1.6rem;
-    font-weight: 500;
-    color: #e8270a;
-    min-width: 60px;
-}
-
-/* ── Chart containers ── */
-.chart-box {
-    background: #0a0f1a;
-    border: 1px solid #141e30;
-    border-radius: 16px;
-    padding: 20px;
-    margin-bottom: 16px;
-}
-
-/* ── Airport tag ── */
 .ap-tag {
     display: inline-block;
     background: #0a0f1a;
@@ -167,24 +136,17 @@ st.markdown("""
     margin-bottom: 8px;
 }
 
-/* slider accent */
 [data-testid="stSlider"] > div > div > div > div {
     background: #e8270a !important;
 }
 
 .stButton > button {
-    background: #e8270a;
-    color: #ffffff;
-    border: 1px solid #e8270a;
+    background: #ffffff;
+    color: #e8270a;
+    border: 1px solid #ffffff;
     border-radius: 10px;
     font-family: 'DM Mono', monospace;
     font-weight: 500;
-}
-
-.stButton > button:hover {
-    background: #ffffff;
-    color: #e8270a;
-    border-color: #ffffff;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -201,7 +163,6 @@ def load_data():
 
 df = load_data()
 
-# Airport bounding boxes
 AIRPORTS = {
     "LGA": dict(lat=(40.760, 40.800), lon=(-73.900, -73.845), center=(40.7769, -73.8740)),
     "JFK": dict(lat=(40.600, 40.680), lon=(-73.840, -73.740), center=(40.6413, -73.7781)),
@@ -224,7 +185,6 @@ st.markdown("""
   <div class='dash-sub'>
     Exploring how Uber pickups shift across New York City throughout the day —
     from sleepy pre-dawn streets to the roar of rush hour. September 2014.
-    References:https://northflank.com/guides/deploying-streamlit-on-northflank
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -234,7 +194,7 @@ ctrl_col, slider_col = st.columns([1, 5])
 
 with ctrl_col:
     if st.button(
-        "⏸ Pause" if st.session_state["is_playing"] else "▶ Play",
+        "Ⅱ Pause" if st.session_state["is_playing"] else "▶ Play",
         use_container_width=True,
     ):
         st.session_state["is_playing"] = not st.session_state["is_playing"]
@@ -253,7 +213,7 @@ hour = st.session_state["pickup_hour"]
 df_hour = df[df["hour"] == hour]
 
 # ── KPI row ───────────────────────────────────────────────────────────────────
-prev_hour = df[df["hour"] == max(0, hour - 1)]
+prev_hour = df[df["hour"] == (hour - 1) % 24]
 delta = len(df_hour) - len(prev_hour)
 delta_str = f"+{delta}" if delta >= 0 else str(delta)
 delta_color = "#34d399" if delta >= 0 else "#f472b6"
@@ -293,6 +253,9 @@ st.markdown("<div class='sec-title'>Live Pickup Map</div>", unsafe_allow_html=Tr
 
 map_main, map_ap1, map_ap2, map_ap3 = st.columns([3, 1, 1, 1])
 
+# 這個淺色底圖不用 Mapbox token，會顯示道路與地名
+LIGHT_MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+
 def hex_layer(data, radius=100):
     return pdk.Layer(
         "HexagonLayer",
@@ -305,8 +268,6 @@ def hex_layer(data, radius=100):
         pickable=True,
     )
 
-LIGHT_MAP_STYLE = "mapbox://styles/mapbox/light-v9"
-
 with map_main:
     st.markdown(
         f"<div style='font-size:0.82rem;color:#8aa4c0;margin-bottom:6px;font-family:DM Mono,monospace;'>"
@@ -317,7 +278,6 @@ with map_main:
 
     deck = pdk.Deck(
         map_style=LIGHT_MAP_STYLE,
-        layers=[hex_layer(df_hour, 100)],
         initial_view_state=pdk.ViewState(
             latitude=40.730,
             longitude=-73.935,
@@ -325,6 +285,7 @@ with map_main:
             pitch=50,
             bearing=0,
         ),
+        layers=[hex_layer(df_hour, 100)],
         tooltip={"text": "Pickups: {elevationValue}"},
     )
     st.pydeck_chart(deck, use_container_width=True, height=430)
@@ -336,6 +297,7 @@ for col, (code, label) in zip(
     with col:
         b = AIRPORTS[code]
         lat_c, lon_c = b["center"]
+
         df_ap = df_hour[
             df_hour["lat"].between(b["lat"][0] - 0.06, b["lat"][1] + 0.06)
             & df_hour["lon"].between(b["lon"][0] - 0.06, b["lon"][1] + 0.06)
@@ -353,7 +315,6 @@ for col, (code, label) in zip(
 
         deck_ap = pdk.Deck(
             map_style=LIGHT_MAP_STYLE,
-            layers=[hex_layer(df_ap, 100)],
             initial_view_state=pdk.ViewState(
                 latitude=lat_c,
                 longitude=lon_c,
@@ -361,6 +322,7 @@ for col, (code, label) in zip(
                 pitch=50,
                 bearing=0,
             ),
+            layers=[hex_layer(df_ap, 100)],
             tooltip={"text": "Pickups: {elevationValue}"},
         )
         st.pydeck_chart(deck_ap, use_container_width=True, height=190)
@@ -381,36 +343,28 @@ DARK_LAYOUT = dict(
     yaxis=dict(linecolor="#141e30", gridcolor="#0e1520", zeroline=False),
 )
 
-# Chart 1 — Hourly pickups with current hour highlighted
 with ch1:
-    st.markdown(
-        "<div style='font-size:0.78rem;color:#8aa4c0;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;'>Pickups by Hour</div>",
-        unsafe_allow_html=True,
-    )
+    st.markdown("<div style='font-size:0.78rem;color:#8aa4c0;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;'>Pickups by Hour</div>", unsafe_allow_html=True)
     hourly = df.groupby("hour").size().reset_index(name="count")
     bar_colors = ["#e8270a" if h == hour else "#1a2a4a" for h in hourly["hour"]]
 
     fig1 = go.Figure()
-    fig1.add_trace(
-        go.Bar(
-            x=hourly["hour"],
-            y=hourly["count"],
-            marker_color=bar_colors,
-            marker_line_width=0,
-            hovertemplate="%{x}:00<br><b>%{y:,} pickups</b><extra></extra>",
-        )
-    )
-    fig1.add_trace(
-        go.Scatter(
-            x=hourly["hour"],
-            y=hourly["count"],
-            mode="lines",
-            line=dict(color="#5b8dee", width=1.5, shape="spline"),
-            opacity=0.5,
-            showlegend=False,
-            hoverinfo="skip",
-        )
-    )
+    fig1.add_trace(go.Bar(
+        x=hourly["hour"],
+        y=hourly["count"],
+        marker_color=bar_colors,
+        marker_line_width=0,
+        hovertemplate="%{x}:00<br><b>%{y:,} pickups</b><extra></extra>",
+    ))
+    fig1.add_trace(go.Scatter(
+        x=hourly["hour"],
+        y=hourly["count"],
+        mode="lines",
+        line=dict(color="#5b8dee", width=1.5, shape="spline"),
+        opacity=0.5,
+        showlegend=False,
+        hoverinfo="skip",
+    ))
     fig1.add_vline(
         x=hour,
         line_color="#ffffff",
@@ -430,26 +384,10 @@ with ch1:
     fig1.update_layout(**layout)
     st.plotly_chart(fig1, use_container_width=True)
 
-# Chart 2 — Neighborhood bar
 with ch2:
-    st.markdown(
-        "<div style='font-size:0.78rem;color:#8aa4c0;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;'>Top Neighborhoods</div>",
-        unsafe_allow_html=True,
-    )
+    st.markdown("<div style='font-size:0.78rem;color:#8aa4c0;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;'>Top Neighborhoods</div>", unsafe_allow_html=True)
     nb = df_hour["neighborhood"].value_counts().reset_index()
     nb.columns = ["neighborhood", "count"]
-
-    palette = [
-        "#e8270a",
-        "#5b8dee",
-        "#ffffff",
-        "#1a2a4a",
-        "#c8d6e8",
-        "#f472b6",
-        "#60a5fa",
-        "#fb923c",
-        "#818cf8",
-    ]
 
     fig2 = px.bar(
         nb,
@@ -457,7 +395,10 @@ with ch2:
         y="neighborhood",
         orientation="h",
         color="neighborhood",
-        color_discrete_sequence=palette,
+        color_discrete_sequence=[
+            "#e8270a", "#5b8dee", "#ffffff", "#1a2a4a",
+            "#c8d6e8", "#f472b6", "#60a5fa", "#fb923c", "#818cf8",
+        ],
     )
     fig2.update_traces(marker_line_width=0, showlegend=False)
     layout2 = dict(**DARK_LAYOUT, height=220, showlegend=False)
@@ -470,12 +411,8 @@ with ch2:
     fig2.update_layout(**layout2)
     st.plotly_chart(fig2, use_container_width=True)
 
-# Chart 3 — Base donut
 with ch3:
-    st.markdown(
-        "<div style='font-size:0.78rem;color:#8aa4c0;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;'>Fleet Share</div>",
-        unsafe_allow_html=True,
-    )
+    st.markdown("<div style='font-size:0.78rem;color:#8aa4c0;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;'>Fleet Share</div>", unsafe_allow_html=True)
     base_cnt = df_hour["base"].value_counts().reset_index()
     base_cnt.columns = ["base", "count"]
 
@@ -505,33 +442,27 @@ with ch3:
 # ── Row 2 charts ──────────────────────────────────────────────────────────────
 ch4, ch5 = st.columns([2, 1])
 
-# Chart 4 — Weekday heatmap
 with ch4:
-    st.markdown(
-        "<div style='font-size:0.78rem;color:#8aa4c0;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;'>Hour × Weekday Heatmap</div>",
-        unsafe_allow_html=True,
-    )
+    st.markdown("<div style='font-size:0.78rem;color:#8aa4c0;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;'>Hour × Weekday Heatmap</div>", unsafe_allow_html=True)
     wd_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     heat = df.groupby(["weekday", "hour"]).size().reset_index(name="count")
     heat_piv = heat.pivot(index="weekday", columns="hour", values="count").fillna(0)
     heat_piv = heat_piv.reindex([w for w in wd_order if w in heat_piv.index])
 
-    fig4 = go.Figure(
-        go.Heatmap(
-            z=heat_piv.values,
-            x=list(heat_piv.columns),
-            y=list(heat_piv.index),
-            colorscale=[
-                [0.0, "#0a0f1a"],
-                [0.25, "#1a2a4a"],
-                [0.5, "#5b8dee"],
-                [0.75, "#e8270a"],
-                [1.0, "#ffffff"],
-            ],
-            showscale=False,
-            hovertemplate="Hour %{x}:00, %{y}<br><b>%{z:.0f} pickups</b><extra></extra>",
-        )
-    )
+    fig4 = go.Figure(go.Heatmap(
+        z=heat_piv.values,
+        x=list(heat_piv.columns),
+        y=list(heat_piv.index),
+        colorscale=[
+            [0.0, "#0a0f1a"],
+            [0.25, "#1a2a4a"],
+            [0.5, "#5b8dee"],
+            [0.75, "#e8270a"],
+            [1.0, "#ffffff"],
+        ],
+        showscale=False,
+        hovertemplate="Hour %{x}:00, %{y}<br><b>%{z:.0f} pickups</b><extra></extra>",
+    ))
     fig4.update_layout(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
@@ -543,18 +474,12 @@ with ch4:
     )
     st.plotly_chart(fig4, use_container_width=True)
 
-# Chart 5 — Airport comparison bar
 with ch5:
-    st.markdown(
-        "<div style='font-size:0.78rem;color:#8aa4c0;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;'>Airport Comparison</div>",
-        unsafe_allow_html=True,
-    )
-    ap_data = pd.DataFrame(
-        {
-            "Airport": ["LaGuardia", "JFK", "Newark"],
-            "Pickups": [lga, jfk, ewr],
-        }
-    )
+    st.markdown("<div style='font-size:0.78rem;color:#8aa4c0;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;'>Airport Comparison</div>", unsafe_allow_html=True)
+    ap_data = pd.DataFrame({
+        "Airport": ["LaGuardia", "JFK", "Newark"],
+        "Pickups": [lga, jfk, ewr],
+    })
 
     fig5 = px.bar(
         ap_data,
@@ -576,7 +501,6 @@ with ch5:
     fig5.update_layout(**layout5)
     st.plotly_chart(fig5, use_container_width=True)
 
-# ── Raw data expander ─────────────────────────────────────────────────────────
 with st.expander(f"📋 Raw data — {hour:02d}:00 ({len(df_hour):,} rows)"):
     st.dataframe(
         df_hour[["date_time", "lat", "lon", "base", "neighborhood"]].reset_index(drop=True),
@@ -584,8 +508,6 @@ with st.expander(f"📋 Raw data — {hour:02d}:00 ({len(df_hour):,} rows)"):
         height=260,
     )
 
-# ── Autoplay loop ─────────────────────────────────────────────────────────────
+# 放在最後，讓畫面畫完後繼續下一格
 if st.session_state["is_playing"]:
-    time.sleep(0.6)
-    st.session_state["pickup_hour"] = (st.session_state["pickup_hour"] + 1) % 24
     st.rerun()
