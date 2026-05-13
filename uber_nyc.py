@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import pydeck as pdk
 import plotly.graph_objects as go
@@ -13,6 +14,175 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+# ── Plotly responsive font resizer ────────────────────────────────────────────
+def inject_plotly_resizer():
+    components.html("""
+<script>
+(function () {
+    const doc = window.parent.document;
+
+    function clamp(v, min, max) {
+        return Math.max(min, Math.min(max, v));
+    }
+
+    function traceCount(trace) {
+        if (!trace) return 1;
+        if (Array.isArray(trace.y)) return Math.max(trace.y.length, 1);
+        if (Array.isArray(trace.x)) return Math.max(trace.x.length, 1);
+        if (Array.isArray(trace.labels)) return Math.max(trace.labels.length, 1);
+        return 1;
+    }
+
+    function sizesFor(gd) {
+        const box = gd.getBoundingClientRect();
+        const w = box.width || 700;
+        const h = box.height || 260;
+
+        const base = clamp(Math.min(w / 62, h / 20), 9, 30);
+
+        let maxItems = 1;
+        if (gd.data) {
+            gd.data.forEach(function (trace) {
+                if (trace.type === "bar" || trace.type === "pie" || trace.type === "heatmap") {
+                    maxItems = Math.max(maxItems, traceCount(trace));
+                }
+            });
+        }
+
+        const rowHeight = h / maxItems;
+
+        const barText = clamp(
+            Math.min(base * 1.2, rowHeight * 0.42),
+            9,
+            28
+        );
+
+        const pieText = clamp(base * 1.12, 10, 26);
+        const heatText = clamp(base * 0.95, 9, 22);
+
+        return {
+            font: Math.round(base),
+            tick: Math.round(clamp(base * 0.9, 9, 24)),
+            axisTitle: Math.round(clamp(base * 0.95, 10, 25)),
+            legend: Math.round(clamp(base * 0.86, 8, 22)),
+            barText: Math.round(barText),
+            pieText: Math.round(pieText),
+            heatText: Math.round(heatText),
+            marginL: Math.round(clamp(w * 0.075, 44, 150)),
+            marginR: Math.round(clamp(w * 0.055, 34, 130)),
+            marginT: Math.round(clamp(h * 0.08, 18, 88)),
+            marginB: Math.round(clamp(h * 0.12, 34, 110))
+        };
+    }
+
+    function relayout(gd) {
+        if (!gd || gd.dataset.resizing === "1") return;
+
+        const Plotly = window.parent.Plotly || window.Plotly;
+        if (!Plotly || !Plotly.relayout || !Plotly.restyle) return;
+
+        const s = sizesFor(gd);
+        gd.dataset.resizing = "1";
+
+        const layoutUpdate = {
+            "font.size": s.font,
+            "legend.font.size": s.legend,
+            "xaxis.tickfont.size": s.tick,
+            "xaxis.title.font.size": s.axisTitle,
+            "yaxis.tickfont.size": s.tick,
+            "yaxis.title.font.size": s.axisTitle,
+            "margin.l": s.marginL,
+            "margin.r": s.marginR,
+            "margin.t": s.marginT,
+            "margin.b": s.marginB
+        };
+
+        const textSizes = [];
+        const outsideTextSizes = [];
+        const insideTextSizes = [];
+        const automargins = [];
+
+        if (gd.data) {
+            gd.data.forEach(function (trace) {
+                if (trace.type === "pie") {
+                    textSizes.push(s.pieText);
+                    outsideTextSizes.push(s.pieText);
+                    insideTextSizes.push(Math.round(s.pieText * 0.82));
+                    automargins.push(true);
+                } else if (trace.type === "bar") {
+                    textSizes.push(s.barText);
+                    outsideTextSizes.push(s.barText);
+                    insideTextSizes.push(Math.round(s.barText * 0.88));
+                    automargins.push(null);
+                } else if (trace.type === "heatmap") {
+                    textSizes.push(s.heatText);
+                    outsideTextSizes.push(s.heatText);
+                    insideTextSizes.push(s.heatText);
+                    automargins.push(null);
+                } else {
+                    textSizes.push(s.font);
+                    outsideTextSizes.push(s.font);
+                    insideTextSizes.push(s.font);
+                    automargins.push(null);
+                }
+            });
+
+            Plotly.restyle(gd, {
+                "textfont.size": textSizes,
+                "outsidetextfont.size": outsideTextSizes,
+                "insidetextfont.size": insideTextSizes,
+                "automargin": automargins
+            });
+        }
+
+        Plotly.relayout(gd, layoutUpdate).finally(function () {
+            gd.dataset.resizing = "0";
+        });
+    }
+
+    function wire() {
+        const plots = doc.querySelectorAll(".js-plotly-plot");
+        plots.forEach(function (gd) {
+            if (gd.dataset.autoFont === "1") {
+                relayout(gd);
+                return;
+            }
+
+            gd.dataset.autoFont = "1";
+
+            const observer = new ResizeObserver(function () {
+                window.requestAnimationFrame(function () {
+                    relayout(gd);
+                });
+            });
+
+            observer.observe(gd);
+            relayout(gd);
+        });
+    }
+
+    wire();
+    setInterval(wire, 1200);
+    window.parent.addEventListener("resize", wire);
+
+    doc.addEventListener("fullscreenchange", function () {
+        setTimeout(wire, 200);
+        setTimeout(wire, 700);
+        setTimeout(wire, 1300);
+    });
+})();
+</script>
+""", height=0)
+
+
+inject_plotly_resizer()
+
+PLOT_CONFIG = {
+    "responsive": True,
+    "displaylogo": False,
+    "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+}
+
 # ── Session state ─────────────────────────────────────────────────────────────
 if "pickup_hour" not in st.session_state:
     st.session_state["pickup_hour"] = 8
@@ -20,7 +190,6 @@ if "pickup_hour" not in st.session_state:
 if "is_playing" not in st.session_state:
     st.session_state["is_playing"] = False
 
-# Play 時間先更新，再畫 slider / map
 if st.session_state["is_playing"]:
     time.sleep(0.6)
     st.session_state["pickup_hour"] = (st.session_state["pickup_hour"] + 1) % 24
@@ -148,6 +317,11 @@ st.markdown("""
     font-family: 'DM Mono', monospace;
     font-weight: 500;
 }
+
+[data-testid="stPlotlyChart"] {
+    width: 100% !important;
+    min-width: 0 !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -185,7 +359,6 @@ st.markdown("""
   <div class='dash-sub'>
     Exploring how Uber pickups shift across New York City throughout the day —
     from sleepy pre-dawn streets to the roar of rush hour. September 2014.
-    Reserence:https://northflank.com/guides/deploying-streamlit-on-northflank
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -254,7 +427,6 @@ st.markdown("<div class='sec-title'>Live Pickup Map</div>", unsafe_allow_html=Tr
 
 map_main, map_ap1, map_ap2, map_ap3 = st.columns([3, 1, 1, 1])
 
-# 這個淺色底圖不用 Mapbox token，會顯示道路與地名
 LIGHT_MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
 
 def hex_layer(data, radius=100):
@@ -339,9 +511,15 @@ DARK_LAYOUT = dict(
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(8,12,20,0.8)",
     font=dict(color="#8aa4c0", size=10, family="DM Sans"),
-    margin=dict(l=10, r=10, t=30, b=10),
+    margin=dict(l=44, r=34, t=22, b=42),
     xaxis=dict(linecolor="#141e30", gridcolor="#0e1520", zeroline=False),
     yaxis=dict(linecolor="#141e30", gridcolor="#0e1520", zeroline=False),
+    hoverlabel=dict(
+        bgcolor="#0a0f1a",
+        bordercolor="#1a2a4a",
+        font=dict(color="#ffffff", family="DM Sans"),
+    ),
+    uniformtext=dict(mode="show", minsize=9),
 )
 
 with ch1:
@@ -381,9 +559,16 @@ with ch1:
         linecolor="#141e30",
         gridcolor="#0e1520",
         zeroline=False,
+        tickfont=dict(size=10),
+    )
+    layout["yaxis"] = dict(
+        linecolor="#141e30",
+        gridcolor="#0e1520",
+        zeroline=False,
+        tickfont=dict(size=10),
     )
     fig1.update_layout(**layout)
-    st.plotly_chart(fig1, use_container_width=True)
+    st.plotly_chart(fig1, use_container_width=True, config=PLOT_CONFIG)
 
 with ch2:
     st.markdown("<div style='font-size:0.78rem;color:#8aa4c0;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;'>Top Neighborhoods</div>", unsafe_allow_html=True)
@@ -401,16 +586,30 @@ with ch2:
             "#c8d6e8", "#f472b6", "#60a5fa", "#fb923c", "#818cf8",
         ],
     )
-    fig2.update_traces(marker_line_width=0, showlegend=False)
+    fig2.update_traces(
+        marker_line_width=0,
+        showlegend=False,
+        textfont=dict(size=10),
+        cliponaxis=False,
+    )
     layout2 = dict(**DARK_LAYOUT, height=220, showlegend=False)
+    layout2["xaxis"] = dict(
+        title=dict(text="count", font=dict(size=10)),
+        linecolor="#141e30",
+        gridcolor="#0e1520",
+        zeroline=False,
+        tickfont=dict(size=10),
+    )
     layout2["yaxis"] = dict(
+        title=dict(text="neighborhood", font=dict(size=10)),
         linecolor="#141e30",
         gridcolor="#0e1520",
         zeroline=False,
         categoryorder="total ascending",
+        tickfont=dict(size=10),
     )
     fig2.update_layout(**layout2)
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, use_container_width=True, config=PLOT_CONFIG)
 
 with ch3:
     st.markdown("<div style='font-size:0.78rem;color:#8aa4c0;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;'>Fleet Share</div>", unsafe_allow_html=True)
@@ -426,19 +625,27 @@ with ch3:
     )
     fig3.update_traces(
         textinfo="percent",
-        textfont_size=9,
+        textfont_size=10,
+        outsidetextfont=dict(size=10),
+        insidetextfont=dict(size=9),
         marker=dict(line=dict(color="#080c14", width=2)),
         pull=[0.03] * len(base_cnt),
+        automargin=True,
     )
     fig3.update_layout(
         paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="#8aa4c0", size=10),
-        margin=dict(l=10, r=10, t=10, b=10),
+        font=dict(color="#8aa4c0", size=10, family="DM Sans"),
+        margin=dict(l=34, r=46, t=14, b=18),
         height=220,
         legend=dict(font=dict(color="#8aa4c0", size=9), bgcolor="rgba(0,0,0,0)"),
         showlegend=True,
+        hoverlabel=dict(
+            bgcolor="#0a0f1a",
+            bordercolor="#1a2a4a",
+            font=dict(color="#ffffff", family="DM Sans"),
+        ),
     )
-    st.plotly_chart(fig3, use_container_width=True)
+    st.plotly_chart(fig3, use_container_width=True, config=PLOT_CONFIG)
 
 # ── Row 2 charts ──────────────────────────────────────────────────────────────
 ch4, ch5 = st.columns([2, 1])
@@ -467,13 +674,28 @@ with ch4:
     fig4.update_layout(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="#8aa4c0", size=9),
-        margin=dict(l=10, r=10, t=10, b=10),
+        font=dict(color="#8aa4c0", size=9, family="DM Sans"),
+        margin=dict(l=48, r=24, t=14, b=36),
         height=220,
-        xaxis=dict(tickmode="linear", dtick=3, linecolor="#141e30", gridcolor="rgba(0,0,0,0)"),
-        yaxis=dict(linecolor="#141e30", gridcolor="rgba(0,0,0,0)"),
+        xaxis=dict(
+            tickmode="linear",
+            dtick=3,
+            linecolor="#141e30",
+            gridcolor="rgba(0,0,0,0)",
+            tickfont=dict(size=9),
+        ),
+        yaxis=dict(
+            linecolor="#141e30",
+            gridcolor="rgba(0,0,0,0)",
+            tickfont=dict(size=9),
+        ),
+        hoverlabel=dict(
+            bgcolor="#0a0f1a",
+            bordercolor="#1a2a4a",
+            font=dict(color="#ffffff", family="DM Sans"),
+        ),
     )
-    st.plotly_chart(fig4, use_container_width=True)
+    st.plotly_chart(fig4, use_container_width=True, config=PLOT_CONFIG)
 
 with ch5:
     st.markdown("<div style='font-size:0.78rem;color:#8aa4c0;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;'>Airport Comparison</div>", unsafe_allow_html=True)
@@ -492,15 +714,29 @@ with ch5:
     )
     fig5.update_traces(
         textposition="outside",
-        textfont=dict(size=9, color="#c8d6e8"),
+        textfont=dict(size=10, color="#c8d6e8"),
         marker_line_width=0,
         opacity=0.9,
         showlegend=False,
+        cliponaxis=False,
     )
     layout5 = dict(**DARK_LAYOUT, height=220, showlegend=False)
-    layout5["yaxis"] = dict(linecolor="#141e30", gridcolor="#0e1520", zeroline=False)
+    layout5["xaxis"] = dict(
+        title=dict(text="Airport", font=dict(size=10)),
+        linecolor="#141e30",
+        gridcolor="#0e1520",
+        zeroline=False,
+        tickfont=dict(size=10),
+    )
+    layout5["yaxis"] = dict(
+        title=dict(text="Pickups", font=dict(size=10)),
+        linecolor="#141e30",
+        gridcolor="#0e1520",
+        zeroline=False,
+        tickfont=dict(size=10),
+    )
     fig5.update_layout(**layout5)
-    st.plotly_chart(fig5, use_container_width=True)
+    st.plotly_chart(fig5, use_container_width=True, config=PLOT_CONFIG)
 
 with st.expander(f"📋 Raw data — {hour:02d}:00 ({len(df_hour):,} rows)"):
     st.dataframe(
@@ -509,6 +745,5 @@ with st.expander(f"📋 Raw data — {hour:02d}:00 ({len(df_hour):,} rows)"):
         height=260,
     )
 
-# 放在最後，讓畫面畫完後繼續下一格
 if st.session_state["is_playing"]:
     st.rerun()
