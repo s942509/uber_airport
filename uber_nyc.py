@@ -185,6 +185,7 @@ st.markdown("""
   <div class='dash-sub'>
     Exploring how Uber pickups shift across New York City throughout the day —
     from sleepy pre-dawn streets to the roar of rush hour. September 2014.
+    Reserence:https://northflank.com/guides/deploying-streamlit-on-northflank
   </div>
 </div>
 """, unsafe_allow_html=True)
